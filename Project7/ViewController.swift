@@ -13,7 +13,11 @@ class ViewController: UITableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        
+//        performSelector(inBackground: #selector(fetchJSON), with: nil)
+        fetchJSON()
+    }
+    
+    @objc func fetchJSON() {
         let urlString: String
         
         if navigationController?.tabBarItem.tag == 0 {
@@ -26,17 +30,21 @@ class ViewController: UITableViewController {
         
         self.navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Credits", style: .done, target: self, action: #selector(showCredits))
         
-        if let url = URL(string: urlString) {
-            if let data = try? Data(contentsOf: url) {
-                parse(json: data)
-                return
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            if let url = URL(string: urlString) {
+                if let data = try? Data(contentsOf: url) {
+                    self?.parse(json: data)
+                    return
+                }
+            }
+            DispatchQueue.main.async {
+                self?.showError()
             }
         }
-        
-        showError()
+//        performSelector(onMainThread: #selector(showError), with: nil, waitUntilDone: false)
     }
     
-    func showError() {
+    @objc func showError() {
         let ac = UIAlertController(title: "Loading error", message: "There was a problem loading the feed; please check your connection and try again.", preferredStyle: .alert)
         ac.addAction(UIAlertAction(title: "OK", style: .default))
         present(ac, animated: true)
@@ -52,15 +60,18 @@ class ViewController: UITableViewController {
         let ac = UIAlertController(title: "Filter petitions", message: nil, preferredStyle: .alert)
         ac.addTextField()
         ac.addAction(UIAlertAction(title: "OK", style: .default) { [self] _ in
-            if allPetitions.isEmpty {
-                allPetitions = petitions
+            DispatchQueue.global(qos: .userInitiated).async { [self] in
+                if allPetitions.isEmpty {
+                    allPetitions = petitions
+                }
+                
+                petitions = allPetitions.filter { petition in
+                    petition.title.lowercased().contains(ac.textFields?[0].text?.lowercased() ?? "")
+                }
+                
+                tableView.performSelector(onMainThread: #selector(UITableView.reloadData), with: nil, waitUntilDone: false)
+//                self.tableView.reloadData()
             }
-            
-            petitions = allPetitions.filter { petition in
-                petition.title.lowercased().contains(ac.textFields?[0].text?.lowercased() ?? "")
-            }
-            
-            self.tableView.reloadData()
         })
         present(ac, animated: true)
     }
@@ -70,7 +81,9 @@ class ViewController: UITableViewController {
 
         if let jsonPetitions = try? decoder.decode(Petitions.self, from: json) {
             petitions = jsonPetitions.results
-            tableView.reloadData()
+            tableView.performSelector(onMainThread: #selector(UITableView.reloadData), with: nil, waitUntilDone: false)
+        } else {
+            performSelector(onMainThread: #selector(showError), with: nil, waitUntilDone: false)
         }
     }
 
